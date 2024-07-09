@@ -79,30 +79,115 @@ module Exercises = struct
 
   (* Exercise 1 *)
   let available_moves (game : Game.t) : Game.Position.t list =
-    ignore game;
-    failwith "Implement me!"
+    let open Game in
+    let len = Game_kind.board_length game.game_kind in
+    let row = List.init len ~f:Fn.id in
+    List.cartesian_product row row
+    |> List.map ~f:(fun (row, column) -> {Position.row; column})
+    |> List.filter_map ~f:(fun pos ->
+      match (Map.find game.board pos) with
+      | None -> Some pos
+      | _ -> None)
   ;;
+
+  let all_pos_in_bounds game =
+    let open Game in
+    let all_positions = Map.keys game.board in
+    List.for_all all_positions ~f:(fun pos -> Position.in_bounds pos ~game_kind:game.game_kind)
+
+  let get_neighbors (pos : Game.Position.t) game =
+    let open Game in
+    let win_len = Game_kind.board_length game.game_kind in
+    let dirs_above = List.init (win_len - 1) ~f:(fun num -> let num = num + 1 in (num, 0)) in
+    let dirs_below = List.init (win_len - 1) ~f:(fun num -> let num = num + 1 in (-1 * num, 0)) in
+    let dirs_right = List.init (win_len - 1) ~f:(fun num -> let num = num + 1 in (0, num)) in
+    let dirs_left =  List.init (win_len - 1) ~f:(fun num -> let num = num + 1 in (0, -1 * num)) in
+    let dirs_up_right = List.init (win_len - 1) ~f:(fun num -> let num = num + 1 in (num, num)) in
+    let dirs_up_left = List.init (win_len - 1) ~f:(fun num -> let num = num + 1 in (num, -1 * num)) in
+    let dirs_down_right = List.init (win_len - 1) ~f:(fun num -> let num = num + 1 in (-1 * num, num)) in
+    let dirs_down_left = List.init (win_len - 1) ~f:(fun num -> let num = num + 1 in (-1 * num, -1 * num)) in
+    let list_of_dirs = [
+      dirs_above
+      ; dirs_below
+      ; dirs_right
+      ; dirs_left
+      ; dirs_up_right
+      ; dirs_up_left
+      ; dirs_down_right
+      ; dirs_down_left
+    ] in
+    List.map list_of_dirs ~f:(fun dirs ->
+      List.filter_map dirs ~f:(fun (r_dir, c_dir) ->
+        let neighbor = {Position.row = pos.row + r_dir; Position.column = pos.column + c_dir} in
+        match Position.in_bounds neighbor ~game_kind:game.game_kind with
+        | true -> Some neighbor
+        | false -> None))
+  
+  let has_win_length_in_a_row (neighbors : Game.Position.t list list) (game : Game.t) (pos : Game.Position.t) =
+    let open Game in
+    let target_piece = Map.find_exn game.board pos in
+    List.exists neighbors ~f:(fun group ->
+      Int.equal (List.length group) ((Game_kind.win_length game.game_kind) - 1) && List.for_all group ~f:(fun neighbor ->
+        Map.mem game.board neighbor && Piece.equal target_piece (Map.find_exn game.board neighbor) 
+      ))
+
+  let game_is_over game =
+    let open Game in
+    let all_positions_placed = Map.keys game.board in
+    let has_game_been_won = List.exists all_positions_placed ~f:(fun pos -> 
+      let neighbors = get_neighbors pos game in
+      has_win_length_in_a_row neighbors game pos) in
+    match has_game_been_won with
+    | false -> (match available_moves game with
+      | [] -> true, None
+      | _ -> false, None)
+    | true -> true, Some (List.find_exn all_positions_placed ~f:(fun pos ->
+      let neighbors = get_neighbors pos game in
+      has_win_length_in_a_row neighbors game pos))
 
   (* Exercise 2 *)
   let evaluate (game : Game.t) : Game.Evaluation.t =
-    ignore game;
-    failwith "Implement me!"
+    (* let open Game in  *)
+    let illegal_moves_detected = not (all_pos_in_bounds game) in
+    match illegal_moves_detected with
+    | true -> Illegal_move
+    | false ->
+      let is_game_over = game_is_over game in
+      match is_game_over with
+      | true, Some winner_piece -> Game_over { winner = Some (Map.find_exn game.board winner_piece) }
+      | true, None -> Game_over { winner = None }
+      | _ -> Game_continues
   ;;
 
   (* Exercise 3 *)
   let winning_moves ~(me : Game.Piece.t) (game : Game.t) : Game.Position.t list =
-    ignore me;
-    ignore game;
-    failwith "Implement me!"
+    let open Game in
+    let unplaced_positions = available_moves game in
+    List.filter_map unplaced_positions ~f:(fun position ->
+      let game_after_move = place_piece game ~piece:me ~position in
+      match evaluate game_after_move with
+      | Game_over { winner = Some piece } ->
+        (match Piece.equal piece me with
+        | true -> Some position
+        | false -> None)
+      | _ -> None
+    )
   ;;
 
   (* Exercise 4 *)
   let losing_moves ~(me : Game.Piece.t) (game : Game.t) : Game.Position.t list =
-    ignore me;
-    ignore game;
-    failwith "Implement me!"
+    winning_moves ~me:(Game.Piece.flip me) game
   ;;
 
+  (* Exercise 5 *)
+  let available_moves_that_do_not_immediately_lose ~(me : Game.Piece.t) (game : Game.t) : Game.Position.t list =
+    let possible_moves = available_moves game in
+    List.filter possible_moves ~f:(fun position ->
+      let game_after_move = place_piece game ~piece:me ~position in
+      List.is_empty (losing_moves ~me game_after_move))
+
+  (* Exercise 6 *)
+  (* let minmax ~(me : Game.Piece.t) (game : Game.t) = () *)
   let exercise_one =
     Command.async
       ~summary:"Exercise 1: Where can I move?"
@@ -122,7 +207,7 @@ module Exercises = struct
        fun () ->
          let evaluation = evaluate win_for_x in
          print_s [%sexp (evaluation : Game.Evaluation.t)];
-         let evaluation = evaluate win_for_x in
+         let evaluation = evaluate non_win in
          print_s [%sexp (evaluation : Game.Evaluation.t)];
          return ())
   ;;
