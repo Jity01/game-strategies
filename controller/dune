@@ -1,4 +1,5 @@
 (library
-  (name game_strategies_controller_lib)
-  (preprocess (pps ppx_jane))
-  (libraries async core game_strategies_common_lib))
+ (name game_strategies_controller_lib)
+ (preprocess
+  (pps ppx_jane))
+ (libraries async core game_strategies_common_lib))

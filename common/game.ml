@@ -82,6 +82,14 @@ module Evaluation = struct
     | Game_continues
     | Game_over of { winner : Piece.t option }
   [@@deriving sexp_of, bin_io]
+  let is_over (game_eval : t) : bool =
+    match game_eval with
+    | Game_over _ -> true
+    | _ -> false
+  let is_illegal (game_eval : t) : bool =
+    match game_eval with
+    | Illegal_move -> true
+    | _ -> false
 end
 
 type t =

@@ -1,4 +1,10 @@
 (executables
  (names controller game_strategies)
- (preprocess (pps ppx_jane))
- (libraries async core core_unix.command_unix game_strategies_lib game_strategies_controller_lib))
+ (preprocess
+  (pps ppx_jane))
+ (libraries
+  async
+  core
+  core_unix.command_unix
+  game_strategies_lib
+  game_strategies_controller_lib))

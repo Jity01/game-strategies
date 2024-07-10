@@ -35,6 +35,15 @@ module Exercises = struct
     |> place_piece ~piece:Piece.O ~position:{ Position.row = 2; column = 0 }
   ;;
 
+  let minmax_test =
+    let open Game in
+    empty_game
+    |> place_piece ~piece:Piece.X ~position:{ Position.row = 0; column = 1 }
+    |> place_piece ~piece:Piece.O ~position:{ Position.row = 2; column = 0 }
+    |> place_piece ~piece:Piece.O ~position:{ Position.row = 2; column = 1 }
+    |> place_piece ~piece:Piece.X ~position:{ Position.row = 2; column = 2 }
+    |> place_piece ~piece:Piece.X ~position:{ Position.row = 1; column = 2 }
+
   let print_game (game : Game.t) =
     (* ignore game; *)
     let open Game in
@@ -98,6 +107,7 @@ module Exercises = struct
   let get_neighbors (pos : Game.Position.t) game =
     let open Game in
     let win_len = Game_kind.board_length game.game_kind in
+    (* TODO: abstract this away *)
     let dirs_above = List.init (win_len - 1) ~f:(fun num -> let num = num + 1 in (num, 0)) in
     let dirs_below = List.init (win_len - 1) ~f:(fun num -> let num = num + 1 in (-1 * num, 0)) in
     let dirs_right = List.init (win_len - 1) ~f:(fun num -> let num = num + 1 in (0, num)) in
@@ -121,7 +131,7 @@ module Exercises = struct
         let neighbor = {Position.row = pos.row + r_dir; Position.column = pos.column + c_dir} in
         match Position.in_bounds neighbor ~game_kind:game.game_kind with
         | true -> Some neighbor
-        | false -> None))
+        | false -> None)) (* TODO: anytime this returns none, eliminate group*)
   
   let has_win_length_in_a_row (neighbors : Game.Position.t list list) (game : Game.t) (pos : Game.Position.t) =
     let open Game in
@@ -131,14 +141,15 @@ module Exercises = struct
         Map.mem game.board neighbor && Piece.equal target_piece (Map.find_exn game.board neighbor) 
       ))
 
-  let game_is_over game =
+  let is_game_over game =
     let open Game in
     let all_positions_placed = Map.keys game.board in
     let has_game_been_won = List.exists all_positions_placed ~f:(fun pos -> 
       let neighbors = get_neighbors pos game in
       has_win_length_in_a_row neighbors game pos) in
     match has_game_been_won with
-    | false -> (match available_moves game with
+    | false -> (
+      match available_moves game with
       | [] -> true, None
       | _ -> false, None)
     | true -> true, Some (List.find_exn all_positions_placed ~f:(fun pos ->
@@ -152,11 +163,12 @@ module Exercises = struct
     match illegal_moves_detected with
     | true -> Illegal_move
     | false ->
-      let is_game_over = game_is_over game in
+      let is_game_over = is_game_over game in
       match is_game_over with
       | true, Some winner_piece -> Game_over { winner = Some (Map.find_exn game.board winner_piece) }
       | true, None -> Game_over { winner = None }
       | _ -> Game_continues
+    (* TODO: return is_game_over directly *)
   ;;
 
   (* Exercise 3 *)
@@ -180,14 +192,105 @@ module Exercises = struct
   ;;
 
   (* Exercise 5 *)
-  let available_moves_that_do_not_immediately_lose ~(me : Game.Piece.t) (game : Game.t) : Game.Position.t list =
+  let _available_moves_that_do_not_immediately_lose ~(me : Game.Piece.t) (game : Game.t) : Game.Position.t list =
     let possible_moves = available_moves game in
     List.filter possible_moves ~f:(fun position ->
       let game_after_move = place_piece game ~piece:me ~position in
       List.is_empty (losing_moves ~me game_after_move))
-
+  let _count_highest_pieces_together (game : Game.t) ~(piece : Game.Piece.t): int =
+    let open Game in
+    let all_positions_on_board = Map.keys game.board in
+    let piece_positions = List.filter all_positions_on_board ~f:(fun pos -> Piece.equal piece (Map.find_exn game.board pos)) in
+    let neighbors_list = List.map piece_positions ~f:(fun pos -> get_neighbors pos game) in
+    let similarity_count = List.map neighbors_list ~f:(fun neighbors ->
+      List.fold neighbors ~init:0 ~f:(fun acc group ->
+        acc + List.count group ~f:(fun neighbor ->
+          Piece.equal piece (Map.find_exn game.board neighbor)))) in
+    Option.value_map (List.max_elt similarity_count ~compare:Int.compare) ~default:0 ~f:Fn.id
+  let score (game_eval : Game.Evaluation.t) ~(is_maxi_player : bool) ~(player_piece : Game.Piece.t): int =
+    let open Game in
+    match is_maxi_player with
+    | true ->
+      (match game_eval with
+      | Illegal_move -> -1 * Int.max_value
+      | Game_over { winner = Some piece } -> (match Piece.equal piece player_piece with | true -> Int.max_value | false -> -1 * Int.max_value)
+      | Game_over { winner = None } -> 0
+      | Game_continues -> (*count_highest_pieces_together game ~piece:player_piece*) 0)
+    | false -> 
+      (match game_eval with
+      | Illegal_move -> Int.max_value
+      | Game_over { winner = Some piece } -> (match Piece.equal piece (Piece.flip player_piece) with | true -> Int.max_value | false -> -1 * Int.max_value)
+      | Game_over { winner = None } -> 0
+      | Game_continues -> (*-1 * count_highest_pieces_together game ~piece:(Piece.flip player_piece)*) 0)
+    ;;
   (* Exercise 6 *)
-  (* let minmax ~(me : Game.Piece.t) (game : Game.t) = () *)
+  let rec helper ~(player_piece : Game.Piece.t) ~(game : Game.t) ~(depth : int) ~(is_maxi_player : bool) =
+    let unplaced_moves = available_moves game in
+    let game_eval = evaluate game in
+    (* print_endline "~~~~~~~~~~~~~~~~~~~~~~~~~";
+    print_s [%sexp (player_piece : Game.Piece.t)];
+    print_s [%sexp (is_maxi_player : bool)];
+    print_endline "";
+    print_game game;
+    print_endline "";
+    print_s [%sexp (unplaced_moves : Game.Position.t list)];
+    print_endline "~~~~~~~~~~~~~~~~~~~~~~~~~"; *)
+    match Int.(=) depth 0 || List.is_empty unplaced_moves || Game.Evaluation.is_over game_eval || Game.Evaluation.is_illegal game_eval with
+    | true ->
+      (* print_endline "********";
+      print_s [%sexp (player_piece : Game.Piece.t)];
+      print_s [%sexp (game_eval : Game.Evaluation.t)];
+      print_s [%sexp (is_maxi_player : bool)];
+      print_s [%sexp (score game_eval ~is_maxi_player ~player_piece : int)];
+      print_endline "********"; *)
+      (match is_maxi_player with
+      | true -> None, score game_eval ~is_maxi_player ~player_piece
+      | false -> None, score game_eval ~is_maxi_player ~player_piece)
+    | false ->
+      let positions_with_score = List.map unplaced_moves ~f:(fun position ->
+        let game_after_move = place_piece ~position ~piece:player_piece game in
+        let _, s = helper ~player_piece:(Game.Piece.flip player_piece) ~is_maxi_player:(not is_maxi_player) ~game:game_after_move ~depth:(depth - 1) in
+        position, s) in
+      let scores = List.map positions_with_score ~f:(fun (_, score) -> score) in
+      (* print_endline "--RECEIVED SCORES--";
+      print_s [%sexp (player_piece : Game.Piece.t)];
+      print_s [%sexp (is_maxi_player : bool)];
+      print_s [%sexp (scores : int list)];
+      print_endline "--RECEIVED SCORES--"; *)
+      (* print_endline "----";
+      print_s [%sexp (player_piece : Game.Piece.t)];
+      print_s [%sexp (scores : int list)];
+      print_game game;
+      print_endline "----"; *)
+      match is_maxi_player with
+      | true ->
+        let max_score = Option.value_map (List.max_elt scores ~compare:Int.compare) ~default:(-1 * Int.max_value) ~f:Fn.id in
+        let best_move, _ = List.find_exn positions_with_score ~f:(fun (_, s) -> Int.(=) max_score s) in
+        Some best_move, max_score
+      | false ->
+        let min_score = Option.value_map (List.min_elt scores ~compare:Int.compare) ~default:Int.max_value ~f:Fn.id in
+        let best_move, _ = List.find_exn positions_with_score ~f:(fun (_, s) -> Int.(=) min_score s) in
+        Some best_move, min_score
+
+  let minmax ~(me : Game.Piece.t) (game : Game.t) =
+    (* let open Game in *)
+    (* let game_after_move = place_piece game ~piece:me ~position:{Position.row = 0; column = 2} in *)
+    let pos, _ = helper ~player_piece:me ~is_maxi_player:true ~game ~depth:Int.max_value in
+    pos
+    (* let available_moves = available_moves game in
+    let depth = match game.game_kind with | Tic_tac_toe -> Int.max_value | Omok -> 1000 in
+    let scores_with_position = List.map available_moves ~f:(fun position ->
+      let game_after_move = place_piece game ~position ~piece:me in
+      let score = helper ~player_piece:me ~is_maxi_player:true ~game:game_after_move ~depth in
+      score, position) in
+      print_s [%sexp (scores_with_position : (int * Game.Position.t) list)];
+    let scores = List.map scores_with_position ~f:(fun (score, _) -> score) in
+    let max_score = (List.max_elt scores ~compare:Int.compare) in
+    match max_score with
+    | None -> None
+    | Some score ->
+      let _, best_move = (List.find_exn scores_with_position ~f:(fun (s, _) -> Int.(=) s score)) in
+      Some best_move *)
   let exercise_one =
     Command.async
       ~summary:"Exercise 1: Where can I move?"
@@ -245,6 +348,21 @@ module Exercises = struct
          return ())
   ;;
 
+  let minmax =
+    Command.async
+      ~summary:"MinMax Test"
+      (let%map_open.Command () = return ()
+      and piece = piece_flag in
+      fun () ->
+        print_game minmax_test;
+        (* let best_move = minmax ~me:piece minmax_test in
+        print_s [%sexp (best_move : Game.Position.t option)]; *)
+
+        let res = (minmax ~me:piece minmax_test) in
+        print_endline "FINAL";
+        print_s [%sexp ( res : Game.Position.t option)];
+        return ())
+
   let command =
     Command.group
       ~summary:"Exercises"
@@ -252,6 +370,7 @@ module Exercises = struct
       ; "two"  , exercise_two
       ; "three", exercise_three
       ; "four" , exercise_four
+      ; "minmax", minmax
       ]
   ;;
 end

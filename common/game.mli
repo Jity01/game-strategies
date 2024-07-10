@@ -72,6 +72,8 @@ module Evaluation : sig
     | Game_continues
     | Game_over of { winner : Piece.t option }
   [@@deriving sexp_of, bin_io]
+  val is_over : t -> bool
+  val is_illegal : t -> bool
 end
 
 type t =

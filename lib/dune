@@ -1,5 +1,6 @@
 (library
  (name game_strategies_lib)
- (preprocess (pps ppx_jane))
+ (preprocess
+  (pps ppx_jane))
  (libraries async core game_strategies_common_lib)
  (inline_tests))
