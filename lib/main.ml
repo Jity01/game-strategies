@@ -188,7 +188,11 @@ module Exercises = struct
 
   (* Exercise 4 *)
   let losing_moves ~(me : Game.Piece.t) (game : Game.t) : Game.Position.t list =
-    winning_moves ~me:(Game.Piece.flip me) game
+    let available_moves = available_moves game in
+    let opponent_winning_moves = winning_moves ~me:(Game.Piece.flip me) game in
+    match opponent_winning_moves with
+    | [] -> []
+    | _ -> List.filter available_moves ~f:(fun p -> not (List.mem opponent_winning_moves p ~equal:Game.Position.equal))
   ;;
 
   (* Exercise 5 *)
@@ -225,38 +229,40 @@ module Exercises = struct
     ;;
   (* Exercise 6 *)
   let rec helper ~(player_piece : Game.Piece.t) ~(game : Game.t) ~(depth : int) ~(is_maxi_player : bool) =
+    let losing_moves = losing_moves ~me:player_piece game in
     let unplaced_moves = available_moves game in
+    let unplaced_moves = List.filter unplaced_moves ~f:(fun p -> not (List.mem losing_moves p ~equal:Game.Position.equal)) in
     let game_eval = evaluate game in
-    print_endline "~~~~~~~~~~~~~~~~~~~~~~~~~";
+    (* print_endline "~~~~~~~~~~~~~~~~~~~~~~~~~";
+    print_s [%sexp (losing_moves : Game.Position.t list)];
     print_s [%sexp (player_piece : Game.Piece.t)];
     print_s [%sexp (is_maxi_player : bool)];
     print_endline "";
     print_game game;
     print_endline "";
     print_s [%sexp (unplaced_moves : Game.Position.t list)];
-    print_endline "~~~~~~~~~~~~~~~~~~~~~~~~~";
+    print_endline "~~~~~~~~~~~~~~~~~~~~~~~~~"; *)
     match Int.(=) depth 0 || List.is_empty unplaced_moves || Game.Evaluation.is_over game_eval || Game.Evaluation.is_illegal game_eval with
     | true ->
-      (* print_endline "********";
-      print_s [%sexp (player_piece : Game.Piece.t)];
-      print_s [%sexp (game_eval : Game.Evaluation.t)];
-      print_s [%sexp (is_maxi_player : bool)];
-      print_s [%sexp (score game_eval ~is_maxi_player ~player_piece : int)];
-      print_endline "********"; *)
       (match is_maxi_player with
       | true -> None, score game_eval ~is_maxi_player ~player_piece
       | false -> None, score game_eval ~is_maxi_player ~player_piece)
     | false ->
-      let positions_with_score = List.map unplaced_moves ~f:(fun position ->
+      let winning_moves = winning_moves ~me:player_piece game in
+      match winning_moves with
+    | first :: _ -> (match is_maxi_player with | true -> Some first, Int.max_value | false -> Some first, -1 * Int.max_value)
+    | [] ->
+      (let positions_with_score = List.map unplaced_moves ~f:(fun position ->
         let game_after_move = place_piece ~position ~piece:player_piece game in
         let _, s = helper ~player_piece:(Game.Piece.flip player_piece) ~is_maxi_player:(not is_maxi_player) ~game:game_after_move ~depth:(depth - 1) in
         position, s) in
       let scores = List.map positions_with_score ~f:(fun (_, score) -> score) in
-      print_endline "--RECEIVED SCORES--";
+      (* print_endline "--RECEIVED SCORES--";
       print_s [%sexp (player_piece : Game.Piece.t)];
       print_s [%sexp (is_maxi_player : bool)];
       print_s [%sexp (scores : int list)];
-      print_endline "--RECEIVED SCORES--";
+      print_s [%sexp (Option.value_map (List.max_elt scores ~compare:Int.compare) ~default:(-1 * Int.max_value) ~f:Fn.id : int)];
+      print_endline "--RECEIVED SCORES--"; *)
       match is_maxi_player with
       | true ->
         let max_score = Option.value_map (List.max_elt scores ~compare:Int.compare) ~default:(-1 * Int.max_value) ~f:Fn.id in
@@ -265,28 +271,13 @@ module Exercises = struct
       | false ->
         let min_score = Option.value_map (List.min_elt scores ~compare:Int.compare) ~default:Int.max_value ~f:Fn.id in
         let best_move, _ = List.find_exn positions_with_score ~f:(fun (_, s) -> Int.(=) min_score s) in
-        Some best_move, min_score
+        Some best_move, min_score)
 
   let minmax ~(me : Game.Piece.t) (game : Game.t) =
     let open Game in
-    (* let game_after_move = place_piece game ~piece:me ~position:{Position.row = 0; column = 2} in *)
     let pos, _ = helper ~player_piece:me ~is_maxi_player:true ~game ~depth:Int.max_value in
     let default = {Position.row = 0; column = 0} in
     Option.value_map pos ~default ~f:Fn.id
-    (* let available_moves = available_moves game in
-    let depth = match game.game_kind with | Tic_tac_toe -> Int.max_value | Omok -> 1000 in
-    let scores_with_position = List.map available_moves ~f:(fun position ->
-      let game_after_move = place_piece game ~position ~piece:me in
-      let score = helper ~player_piece:me ~is_maxi_player:true ~game:game_after_move ~depth in
-      score, position) in
-      print_s [%sexp (scores_with_position : (int * Game.Position.t) list)];
-    let scores = List.map scores_with_position ~f:(fun (score, _) -> score) in
-    let max_score = (List.max_elt scores ~compare:Int.compare) in
-    match max_score with
-    | None -> None
-    | Some score ->
-      let _, best_move = (List.find_exn scores_with_position ~f:(fun (s, _) -> Int.(=) s score)) in
-      Some best_move *)
   let exercise_one =
     Command.async
       ~summary:"Exercise 1: Where can I move?"
@@ -350,7 +341,7 @@ module Exercises = struct
       (let%map_open.Command () = return ()
       and piece = piece_flag in
       fun () ->
-        print_game minmax_test;
+        (* print_game minmax_test; *)
         let res = (minmax ~me:piece minmax_test) in
         print_endline "FINAL";
         print_s [%sexp ( res : Game.Position.t)];
