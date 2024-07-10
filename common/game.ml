@@ -1,4 +1,4 @@
-open  Core
+open Core
 open! Async
 
 module Game_kind = struct
@@ -14,20 +14,11 @@ module Game_kind = struct
     |> sexp_of_t
     |> Sexp.to_string_hum
     |> String.lowercase
-    |> String.map ~f:(function
-      | '_' -> ' '
-      | x   -> x)
+    |> String.map ~f:(function '_' -> ' ' | x -> x)
   ;;
 
-  let board_length = function
-    | Tic_tac_toe -> 3
-    | Omok        -> 15
-  ;;
-
-  let win_length = function
-    | Tic_tac_toe -> 3
-    | Omok        -> 5
-  ;;
+  let board_length = function Tic_tac_toe -> 3 | Omok -> 15
+  let win_length = function Tic_tac_toe -> 3 | Omok -> 5
 end
 
 module Piece = struct
@@ -38,17 +29,13 @@ module Piece = struct
 
   let of_string = Fn.compose t_of_sexp Sexp.of_string
   let to_string = Fn.compose Sexp.to_string_hum sexp_of_t
-
-  let flip = function
-    | X -> O
-    | O -> X
-  ;;
+  let flip = function X -> O | O -> X
 end
 
 module Position = struct
   module T = struct
     type t =
-      { row    : int
+      { row : int
       ; column : int
       }
     [@@deriving sexp, equal, bin_io, compare]
@@ -65,14 +52,22 @@ module Position = struct
     List.for_all [ t.row; t.column ] ~f:(fun x -> x >= 0 && x < board_length)
   ;;
 
-  let down  { row; column } = { row = row + 1; column }
+  let down { row; column } = { row = row + 1; column }
   let right { row; column } = { row; column = column + 1 }
-  let up    { row; column } = { row = row - 1; column }
-  let left  { row; column } = { row; column = column - 1 }
+  let up { row; column } = { row = row - 1; column }
+  let left { row; column } = { row; column = column - 1 }
 
   let all_offsets =
     let ( >> ) = Fn.compose in
-    [ up; up >> right; right; right >> down; down; down >> left; left; left >> up ]
+    [ up
+    ; up >> right
+    ; right
+    ; right >> down
+    ; down
+    ; down >> left
+    ; left
+    ; left >> up
+    ]
   ;;
 end
 
@@ -82,19 +77,19 @@ module Evaluation = struct
     | Game_continues
     | Game_over of { winner : Piece.t option }
   [@@deriving sexp_of, bin_io]
+
   let is_over (game_eval : t) : bool =
-    match game_eval with
-    | Game_over _ -> true
-    | _ -> false
+    match game_eval with Game_over _ -> true | _ -> false
+  ;;
+
   let is_illegal (game_eval : t) : bool =
-    match game_eval with
-    | Illegal_move -> true
-    | _ -> false
+    match game_eval with Illegal_move -> true | _ -> false
+  ;;
 end
 
 type t =
   { game_kind : Game_kind.t
-  ; board     : Piece.t Position.Map.t
+  ; board : Piece.t Position.Map.t
   }
 [@@deriving sexp_of, bin_io]
 

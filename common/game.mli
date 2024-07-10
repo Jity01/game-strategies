@@ -6,16 +6,16 @@ module Game_kind : sig
     | Omok
   [@@deriving sexp_of, equal, bin_io]
 
-  val to_string     : t -> string
+  val to_string : t -> string
   val to_string_hum : t -> string
 
   (** [board_length] returns the length of the board. 3 for [ Tic_tac_toe ]
-    and 15 for [Omok]. *)
-  val board_length  : t -> int
+      and 15 for [Omok]. *)
+  val board_length : t -> int
 
   (** [win_length] returns the winning length of the board. 3 for
-    [ Tic_tac_toe ] and 5 for [Omok]. *)
-  val win_length    : t -> int
+      [ Tic_tac_toe ] and 5 for [Omok]. *)
+  val win_length : t -> int
 end
 
 module Piece : sig
@@ -38,7 +38,7 @@ module Position : sig
 
      column indexes increment rightwards. *)
   type t =
-    { row    : int
+    { row : int
     ; column : int
     }
   [@@deriving sexp_of, equal, bin_io, compare]
@@ -47,20 +47,20 @@ module Position : sig
   val in_bounds : t -> game_kind:Game_kind.t -> bool
 
   (** [down t] is [t]'s downwards neighbor. *)
-  val down      : t -> t
+  val down : t -> t
 
   (** [right t] is [t]'s rightwards neighbor. *)
-  val right     : t -> t
+  val right : t -> t
 
   (** [up t] is [t]'s upwards neighbor. *)
-  val up        : t -> t
+  val up : t -> t
 
   (** [left t] is [t]'s leftwards neighbor. *)
-  val left      : t -> t
+  val left : t -> t
 
   (** [all_offsets] is a list of functions to compute all 8 neighbors of a
-    cell (i.e. left, up-left, up, up-right, right, right-down, down,
-    down-left). *)
+      cell (i.e. left, up-left, up, up-right, right, right-down, down,
+      down-left). *)
   val all_offsets : (t -> t) list
 
   include Comparable.S_plain with type t := t
@@ -72,13 +72,14 @@ module Evaluation : sig
     | Game_continues
     | Game_over of { winner : Piece.t option }
   [@@deriving sexp_of, bin_io]
+
   val is_over : t -> bool
   val is_illegal : t -> bool
 end
 
 type t =
   { game_kind : Game_kind.t
-  ; board     : Piece.t Position.Map.t
+  ; board : Piece.t Position.Map.t
   }
 [@@deriving sexp_of, bin_io]
 
