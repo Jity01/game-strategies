@@ -212,13 +212,13 @@ module Exercises = struct
     match is_maxi_player with
     | true ->
       (match game_eval with
-      | Illegal_move -> -1 * Int.max_value
+      | Illegal_move -> 0
       | Game_over { winner = Some piece } -> (match Piece.equal piece player_piece with | true -> Int.max_value | false -> -1 * Int.max_value)
       | Game_over { winner = None } -> 0
       | Game_continues -> (*count_highest_pieces_together game ~piece:player_piece*) 0)
     | false -> 
       (match game_eval with
-      | Illegal_move -> Int.max_value
+      | Illegal_move -> 0
       | Game_over { winner = Some piece } -> (match Piece.equal piece (Piece.flip player_piece) with | true -> Int.max_value | false -> -1 * Int.max_value)
       | Game_over { winner = None } -> 0
       | Game_continues -> (*-1 * count_highest_pieces_together game ~piece:(Piece.flip player_piece)*) 0)
@@ -227,14 +227,14 @@ module Exercises = struct
   let rec helper ~(player_piece : Game.Piece.t) ~(game : Game.t) ~(depth : int) ~(is_maxi_player : bool) =
     let unplaced_moves = available_moves game in
     let game_eval = evaluate game in
-    (* print_endline "~~~~~~~~~~~~~~~~~~~~~~~~~";
+    print_endline "~~~~~~~~~~~~~~~~~~~~~~~~~";
     print_s [%sexp (player_piece : Game.Piece.t)];
     print_s [%sexp (is_maxi_player : bool)];
     print_endline "";
     print_game game;
     print_endline "";
     print_s [%sexp (unplaced_moves : Game.Position.t list)];
-    print_endline "~~~~~~~~~~~~~~~~~~~~~~~~~"; *)
+    print_endline "~~~~~~~~~~~~~~~~~~~~~~~~~";
     match Int.(=) depth 0 || List.is_empty unplaced_moves || Game.Evaluation.is_over game_eval || Game.Evaluation.is_illegal game_eval with
     | true ->
       (* print_endline "********";
@@ -252,16 +252,11 @@ module Exercises = struct
         let _, s = helper ~player_piece:(Game.Piece.flip player_piece) ~is_maxi_player:(not is_maxi_player) ~game:game_after_move ~depth:(depth - 1) in
         position, s) in
       let scores = List.map positions_with_score ~f:(fun (_, score) -> score) in
-      (* print_endline "--RECEIVED SCORES--";
+      print_endline "--RECEIVED SCORES--";
       print_s [%sexp (player_piece : Game.Piece.t)];
       print_s [%sexp (is_maxi_player : bool)];
       print_s [%sexp (scores : int list)];
-      print_endline "--RECEIVED SCORES--"; *)
-      (* print_endline "----";
-      print_s [%sexp (player_piece : Game.Piece.t)];
-      print_s [%sexp (scores : int list)];
-      print_game game;
-      print_endline "----"; *)
+      print_endline "--RECEIVED SCORES--";
       match is_maxi_player with
       | true ->
         let max_score = Option.value_map (List.max_elt scores ~compare:Int.compare) ~default:(-1 * Int.max_value) ~f:Fn.id in
@@ -273,10 +268,11 @@ module Exercises = struct
         Some best_move, min_score
 
   let minmax ~(me : Game.Piece.t) (game : Game.t) =
-    (* let open Game in *)
+    let open Game in
     (* let game_after_move = place_piece game ~piece:me ~position:{Position.row = 0; column = 2} in *)
     let pos, _ = helper ~player_piece:me ~is_maxi_player:true ~game ~depth:Int.max_value in
-    pos
+    let default = {Position.row = 0; column = 0} in
+    Option.value_map pos ~default ~f:Fn.id
     (* let available_moves = available_moves game in
     let depth = match game.game_kind with | Tic_tac_toe -> Int.max_value | Omok -> 1000 in
     let scores_with_position = List.map available_moves ~f:(fun position ->
@@ -348,19 +344,16 @@ module Exercises = struct
          return ())
   ;;
 
-  let minmax =
+  let minmax_t =
     Command.async
       ~summary:"MinMax Test"
       (let%map_open.Command () = return ()
       and piece = piece_flag in
       fun () ->
         print_game minmax_test;
-        (* let best_move = minmax ~me:piece minmax_test in
-        print_s [%sexp (best_move : Game.Position.t option)]; *)
-
         let res = (minmax ~me:piece minmax_test) in
         print_endline "FINAL";
-        print_s [%sexp ( res : Game.Position.t option)];
+        print_s [%sexp ( res : Game.Position.t)];
         return ())
 
   let command =
@@ -370,7 +363,7 @@ module Exercises = struct
       ; "two"  , exercise_two
       ; "three", exercise_three
       ; "four" , exercise_four
-      ; "minmax", minmax
+      ; "minmax", minmax_t
       ]
   ;;
 end
@@ -378,7 +371,7 @@ end
 module Server = struct
   let handle_take_turn (_client : unit) (query : Rpcs.Take_turn.Query.t) =
     print_s [%message "Received take turn query" (query : Rpcs.Take_turn.Query.t)];
-    let response = { Rpcs.Take_turn.Response.piece = Game.Piece.X; Rpcs.Take_turn.Response.position = {Game.Position.row = 2; column = 1 } } in
+    let response = { Rpcs.Take_turn.Response.piece = Game.Piece.flip query.you_play; Rpcs.Take_turn.Response.position = Exercises.minmax ~me:query.you_play query.game } in
     return response
   ;;
   let handle_game_over (_client : unit) (query : Rpcs.Game_over.Query.t) =
