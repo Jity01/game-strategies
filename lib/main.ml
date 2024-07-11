@@ -6,6 +6,7 @@ module Exercises = struct
   (* Here are some functions which know how to create a couple different
      kinds of games *)
   let empty_game = Game.empty Game.Game_kind.Tic_tac_toe
+  let empty_omok_game = Game.empty Game.Game_kind.Omok
 
   let place_piece (game : Game.t) ~piece ~position : Game.t =
     let board = Map.set game.board ~key:position ~data:piece in
@@ -45,6 +46,16 @@ module Exercises = struct
     |> place_piece ~piece:Piece.X ~position:{ Position.row = 1; column = 2 }
   ;;
 
+  let omok_game =
+    let open Game in
+    empty_omok_game
+    |> place_piece ~piece:Piece.X ~position:{ Position.row = 7; column = 7 }
+    |> place_piece ~piece:Piece.O ~position:{ Position.row = 8; column = 8 }
+    |> place_piece ~piece:Piece.O ~position:{ Position.row = 8; column = 7 }
+    |> place_piece ~piece:Piece.X ~position:{ Position.row = 4; column = 4 }
+    |> place_piece ~piece:Piece.X ~position:{ Position.row = 1; column = 2 }
+  ;;
+
   let print_game (game : Game.t) =
     (* ignore game; *)
     let open Game in
@@ -60,7 +71,33 @@ module Exercises = struct
     let row_list =
       List.map board_in_2d ~f:(fun row -> String.concat row ~sep:" | ")
     in
-    let final_str = String.concat row_list ~sep:"\n---------\n" in
+    let final_str =
+      String.concat
+        row_list
+        ~sep:"\n--------------------------------------------------------\n"
+    in
+    print_endline final_str
+  ;;
+
+  let print_scores (positions_with_score : (Game.Position.t * int) list) =
+    let open Game in
+    let position_to_score_map = Map.of_alist_exn (module Position) positions_with_score in
+    let board_in_2d =
+      List.init (15) ~f:(fun row ->
+        List.init (15) ~f:(fun col ->
+          let key = { Position.row; column = col } in
+          match Map.find position_to_score_map key with
+          | None -> " "
+          | Some piece -> Int.to_string piece))
+    in
+    let row_list =
+      List.map board_in_2d ~f:(fun row -> String.concat row ~sep:" | ")
+    in
+    let final_str =
+      String.concat
+        row_list
+        ~sep:"\n--------------------------------------------------------\n"
+    in
     print_endline final_str
   ;;
 
@@ -270,37 +307,55 @@ module Exercises = struct
       List.is_empty (losing_moves ~me game_after_move))
   ;;
 
-  let _count_highest_pieces_together (game : Game.t) ~(piece : Game.Piece.t)
-    : int
+  let count_unobstructed_pieces_of_pos
+    (pos : Game.Position.t)
+    (game : Game.t)
     =
     let open Game in
-    let all_positions_on_board = Map.keys game.board in
-    let piece_positions =
-      List.filter all_positions_on_board ~f:(fun pos ->
-        Piece.equal piece (Map.find_exn game.board pos))
+    let neighbors = get_neighbors pos game in
+    let target_piece = Map.find_exn game.board pos in
+    let count_of_unobstructed_pieces =
+      List.fold neighbors ~init:0 ~f:(fun acc group ->
+        let count_of_target_pieces =
+          List.count group ~f:(fun piece_position ->
+            let piece = Map.find game.board piece_position in
+            match piece with
+            | None -> false
+            | Some p -> Piece.equal p target_piece)
+        in
+        let count_of_enemy_pieces =
+          List.count group ~f:(fun piece_position ->
+            let piece = Map.find game.board piece_position in
+            match piece with
+            | None -> false
+            | Some p -> Piece.equal p (Piece.flip target_piece))
+        in
+        acc + (count_of_target_pieces - count_of_enemy_pieces))
     in
-    let neighbors_list =
-      List.map piece_positions ~f:(fun pos -> get_neighbors pos game)
-    in
-    let similarity_count =
-      List.map neighbors_list ~f:(fun neighbors ->
-        List.fold neighbors ~init:0 ~f:(fun acc group ->
-          acc
-          + List.count group ~f:(fun neighbor ->
-            Piece.equal piece (Map.find_exn game.board neighbor))))
-    in
-    Option.value_map
-      (List.max_elt similarity_count ~compare:Int.compare)
-      ~default:0
-      ~f:Fn.id
+    count_of_unobstructed_pieces
   ;;
 
-  let score
+  let score_omok
     (game_eval : Game.Evaluation.t)
     ~(is_maxi_player : bool)
     ~(player_piece : Game.Piece.t)
+    ~(game : Game.t)
     : int
     =
+    (* is my board good? 400 wins - impossible wins; closer wins -> higher
+       score (more pieces connected or just in the vicinity of the five
+       should be favored) *)
+    (* what is not worth descending do *)
+    (* best conf : winning game *)
+
+    (* specific strategies to upvote *)
+    (* second best conf : three in a row (given that both sides are not
+       occupied by enemy piece) && four in a row (given that both sides are
+       not occupied by enemy piece) *)
+    (* third : four in a row with both sides not occupied *)
+    (* fourth : three in a row given that both sides are not occupied by
+       enemy piece *)
+    (* X-corner start; Not Middle -> lose *)
     let open Game in
     match is_maxi_player with
     | true ->
@@ -312,7 +367,17 @@ module Exercises = struct
           | false -> -1 * Int.max_value)
        | Game_over { winner = None } -> 0
        | Game_continues ->
-         (*count_highest_pieces_together game ~piece:player_piece*) 0)
+         let positions_on_board = Map.keys game.board in
+         let positions_of_player_piece =
+           List.filter positions_on_board ~f:(fun pos ->
+             Piece.equal (Map.find_exn game.board pos) player_piece)
+         in
+         let count_of_all_pieces_unobstructed =
+           List.fold positions_of_player_piece ~init:0 ~f:(fun acc pos ->
+            (* ptsrint_s [%sexp ] *)
+             acc + count_unobstructed_pieces_of_pos pos game)
+         in
+         count_of_all_pieces_unobstructed * count_of_all_pieces_unobstructed)
     | false ->
       (match game_eval with
        | Illegal_move -> 0
@@ -324,7 +389,59 @@ module Exercises = struct
        | Game_continues ->
          (*-1 * count_highest_pieces_together game ~piece:(Piece.flip
            player_piece)*)
-         0)
+         let positions_on_board = Map.keys game.board in
+         let positions_of_enemy_piece =
+           List.filter positions_on_board ~f:(fun pos ->
+             Piece.equal (Map.find_exn game.board pos) (Piece.flip player_piece))
+         in
+         let count_of_all_enemy_pieces_unobstructed =
+           List.fold positions_of_enemy_piece ~init:0 ~f:(fun acc pos ->
+             print_s [%sexp (pos, count_unobstructed_pieces_of_pos pos game : Game.Position.t * int)];
+             acc + count_unobstructed_pieces_of_pos pos game)
+         in
+         (* print_s [%sexp (-1
+         * (count_of_all_enemy_pieces_unobstructed
+            * count_of_all_enemy_pieces_unobstructed) : int)]; *)
+         -1
+         * (count_of_all_enemy_pieces_unobstructed
+            * count_of_all_enemy_pieces_unobstructed))
+  ;;
+
+  let score
+    (game_eval : Game.Evaluation.t)
+    ~(is_maxi_player : bool)
+    ~(player_piece : Game.Piece.t)
+    ~(game : Game.t)
+    : int
+    =
+    let open Game in
+    match game.game_kind with
+    | Game_kind.Omok ->
+      score_omok game_eval ~is_maxi_player ~player_piece ~game
+    | Game_kind.Tic_tac_toe ->
+      (match is_maxi_player with
+       | true ->
+         (match game_eval with
+          | Illegal_move -> 0
+          | Game_over { winner = Some piece } ->
+            (match Piece.equal piece player_piece with
+             | true -> Int.max_value
+             | false -> -1 * Int.max_value)
+          | Game_over { winner = None } -> 0
+          | Game_continues ->
+            (*count_highest_pieces_together game ~piece:player_piece*) 0)
+       | false ->
+         (match game_eval with
+          | Illegal_move -> 0
+          | Game_over { winner = Some piece } ->
+            (match Piece.equal piece (Piece.flip player_piece) with
+             | true -> Int.max_value
+             | false -> -1 * Int.max_value)
+          | Game_over { winner = None } -> 0
+          | Game_continues ->
+            (*-1 * count_highest_pieces_together game ~piece:(Piece.flip
+              player_piece)*)
+            0))
   ;;
 
   (* Exercise 6 *)
@@ -333,6 +450,8 @@ module Exercises = struct
     ~(game : Game.t)
     ~(depth : int)
     ~(is_maxi_player : bool)
+    ~(alpha : int)
+    ~(beta : int)
     =
     let losing_moves = losing_moves ~me:player_piece game in
     let unplaced_moves = available_moves game in
@@ -341,19 +460,22 @@ module Exercises = struct
         not (List.mem losing_moves p ~equal:Game.Position.equal))
     in
     let game_eval = evaluate game in
-    (* print_endline "~~~~~~~~~~~~~~~~~~~~~~~~~"; print_s [%sexp
-       (losing_moves : Game.Position.t list)]; print_s [%sexp (player_piece :
-       Game.Piece.t)]; print_s [%sexp (is_maxi_player : bool)]; print_endline
-       ""; print_game game; print_endline ""; print_s [%sexp (unplaced_moves
-       : Game.Position.t list)]; print_endline
-       "~~~~~~~~~~~~~~~~~~~~~~~~~"; *)
+    (* print_endline "~~~~~~~~~~~~~~~~~~~~~~~~~"; *)
+    (* print_s [%sexp (losing_moves : Game.Position.t list)]; *)
+    (* print_s [%sexp (player_piece : Game.Piece.t)]; *)
+    (* print_s [%sexp (is_maxi_player : bool)]; *)
+    (* print_endline ""; *)
+    (* print_game game; *)
+    (* print_endline ""; *)
+    (* print_s [%sexp (unplaced_moves : Game.Position.t list)]; *)
+    (* print_endline "~~~~~~~~~~~~~~~~~~~~~~~~~"; *)
     match
       Int.( = ) depth 0
       || List.is_empty unplaced_moves
       || Game.Evaluation.is_over game_eval
       || Game.Evaluation.is_illegal game_eval
     with
-    | true -> None, score game_eval ~is_maxi_player ~player_piece
+    | true -> None, score game_eval ~is_maxi_player ~player_piece ~game
     | false ->
       let winning_moves = winning_moves ~me:player_piece game in
       (match winning_moves with
@@ -363,20 +485,6 @@ module Exercises = struct
             | true -> Int.max_value
             | false -> Int.min_value) )
        | [] ->
-         let positions_with_score =
-           List.map unplaced_moves ~f:(fun position ->
-             let game_after_move =
-               place_piece ~position ~piece:player_piece game
-             in
-             let _, s =
-               helper
-                 ~player_piece:(Game.Piece.flip player_piece)
-                 ~is_maxi_player:(not is_maxi_player)
-                 ~game:game_after_move
-                 ~depth:(depth - 1)
-             in
-             position, s)
-         in
          (* print_endline "--RECEIVED SCORES--"; print_s [%sexp (player_piece
             : Game.Piece.t)]; print_s [%sexp (is_maxi_player : bool)];
             print_s [%sexp (scores : int list)]; print_s [%sexp
@@ -385,6 +493,37 @@ module Exercises = struct
             "--RECEIVED SCORES--"; *)
          (match is_maxi_player with
           | true ->
+            let positions_with_score =
+              List.fold unplaced_moves ~init:[] ~f:(fun acc position ->
+                let is_subtree_redundant =
+                  List.exists acc ~f:(fun (_, s) -> s >= beta)
+                in
+                let max_alpha =
+                  Option.value_map
+                    (List.max_elt
+                       acc
+                       ~compare:(Comparable.lift Int.compare ~f:snd))
+                    ~f:snd
+                    ~default:alpha
+                in
+                match is_subtree_redundant with
+                | true -> List.append acc [ position, 0 ]
+                | false ->
+                  let game_after_move =
+                    place_piece ~position ~piece:player_piece game
+                  in
+                  let _, scr =
+                    helper
+                      ~player_piece:(Game.Piece.flip player_piece)
+                      ~is_maxi_player:(not is_maxi_player)
+                      ~game:game_after_move
+                      ~depth:(depth - 1)
+                      ~alpha:max_alpha
+                      ~beta
+                  in
+                  List.append acc [ position, scr ])
+            in
+            print_scores positions_with_score;
             Option.value_map
               (List.max_elt
                  positions_with_score
@@ -392,6 +531,36 @@ module Exercises = struct
               ~default:(None, Int.min_value)
               ~f:(fun (pos, score) -> Some pos, score)
           | false ->
+            let positions_with_score =
+              List.fold unplaced_moves ~init:[] ~f:(fun acc position ->
+                let is_subtree_redundant =
+                  List.exists acc ~f:(fun (_, s) -> s <= alpha)
+                in
+                let min_beta =
+                  Option.value_map
+                    (List.min_elt
+                       acc
+                       ~compare:(Comparable.lift Int.compare ~f:snd))
+                    ~f:snd
+                    ~default:beta
+                in
+                match is_subtree_redundant with
+                | true -> List.append acc [ position, 0 ]
+                | false ->
+                  let game_after_move =
+                    place_piece ~position ~piece:player_piece game
+                  in
+                  let _, s =
+                    helper
+                      ~player_piece:(Game.Piece.flip player_piece)
+                      ~is_maxi_player:(not is_maxi_player)
+                      ~game:game_after_move
+                      ~depth:(depth - 1)
+                      ~alpha
+                      ~beta:min_beta
+                  in
+                  List.append acc [ position, s ])
+            in
             Option.value_map
               (List.min_elt
                  positions_with_score
@@ -403,7 +572,23 @@ module Exercises = struct
   let minmax ~(me : Game.Piece.t) (game : Game.t) =
     let open Game in
     let pos, _ =
-      helper ~player_piece:me ~is_maxi_player:true ~game ~depth:Int.max_value
+      match game.game_kind with
+      | Game_kind.Omok ->
+        helper
+          ~player_piece:me
+          ~is_maxi_player:true
+          ~game
+          ~depth:1
+          ~beta:Int.max_value
+          ~alpha:Int.min_value
+      | Game_kind.Tic_tac_toe ->
+        helper
+          ~player_piece:me
+          ~is_maxi_player:true
+          ~game
+          ~depth:Int.max_value
+          ~beta:Int.max_value
+          ~alpha:Int.min_value
     in
     let default = { Position.row = 0; column = 0 } in
     Option.value_map pos ~default ~f:Fn.id
@@ -480,6 +665,32 @@ module Exercises = struct
          return ())
   ;;
 
+  let test_omok =
+    Command.async
+      ~summary:"Omok Score Function Test"
+      (let%map_open.Command () = return ()
+       and piece = piece_flag in
+       fun () ->
+         print_game omok_game;
+         let res = minmax ~me:piece omok_game in
+         print_endline "FINAL";
+         print_s [%sexp (res : Game.Position.t)];
+         return ())
+  ;;
+
+  let test_score =
+    Command.async
+      ~summary:"Test Score"
+      (let%map_open.Command () = return ()
+       and _piece = piece_flag in
+       fun () ->
+         print_game omok_game;
+         let eval = evaluate omok_game in
+         let res = score eval ~is_maxi_player:true ~player_piece:(Game.Piece.of_string "O") ~game:omok_game in
+         print_endline "FINAL";
+         print_s [%sexp (res : int)];
+         return ())
+
   let command =
     Command.group
       ~summary:"Exercises"
@@ -488,6 +699,8 @@ module Exercises = struct
       ; "three", exercise_three
       ; "four", exercise_four
       ; "minmax", minmax_t
+      ; "omok", test_omok
+      ; "scr", test_score
       ]
   ;;
 end
