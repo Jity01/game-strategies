@@ -52,7 +52,7 @@ module Exercises = struct
     |> place_piece ~piece:Piece.X ~position:{ Position.row = 7; column = 7 }
     |> place_piece ~piece:Piece.O ~position:{ Position.row = 8; column = 8 }
     |> place_piece ~piece:Piece.O ~position:{ Position.row = 8; column = 7 }
-    |> place_piece ~piece:Piece.X ~position:{ Position.row = 4; column = 4 }
+    |> place_piece ~piece:Piece.O ~position:{ Position.row = 8; column = 9 }
     |> place_piece ~piece:Piece.X ~position:{ Position.row = 1; column = 2 }
   ;;
 
@@ -79,12 +79,14 @@ module Exercises = struct
     print_endline final_str
   ;;
 
-  let print_scores (positions_with_score : (Game.Position.t * int) list) =
+  let _print_scores (positions_with_score : (Game.Position.t * int) list) =
     let open Game in
-    let position_to_score_map = Map.of_alist_exn (module Position) positions_with_score in
+    let position_to_score_map =
+      Map.of_alist_exn (module Position) positions_with_score
+    in
     let board_in_2d =
-      List.init (15) ~f:(fun row ->
-        List.init (15) ~f:(fun col ->
+      List.init 15 ~f:(fun row ->
+        List.init 15 ~f:(fun col ->
           let key = { Position.row; column = col } in
           match Map.find position_to_score_map key with
           | None -> " "
@@ -147,7 +149,7 @@ module Exercises = struct
 
   let get_neighbors (pos : Game.Position.t) game =
     let open Game in
-    let win_len = Game_kind.board_length game.game_kind in
+    let win_len = Game_kind.win_length game.game_kind in
     (* TODO: abstract this away *)
     let dirs_above =
       List.init (win_len - 1) ~f:(fun num ->
@@ -262,7 +264,64 @@ module Exercises = struct
        | _ -> Game_continues)
   ;;
 
+  let get_immediate_neighbors_and_nexts
+    (game : Game.t)
+    (pos : Game.Position.t)
+    =
+    let dirs =
+      [ [ -1, 0; 1, 0 ], [ -2, 0; 2, 0 ]
+      ; [ 0, -1; 0, 1 ], [ 0, -2; 0, 2 ]
+      ; [ 0, -1; 0, 1 ], [ 0, -2; 0, 2 ]
+      ; [ -1, -1; 1, 1 ], [ -2, -2; 2, 2 ]
+      ; [ 1, -1; -1, 1 ], [ 2, -2; -2, 2 ]
+      ]
+    in
+    let neighbors_next_dirs =
+      List.map dirs ~f:(fun (nbr_lst, nxt_lst) ->
+        ( List.map nbr_lst ~f:(fun (r, c) ->
+            { Game.Position.row = pos.row + r; column = pos.column + c })
+        , List.map nxt_lst ~f:(fun (r, c) ->
+            { Game.Position.row = pos.row + r; column = pos.column + c }) ))
+    in
+    List.filter neighbors_next_dirs ~f:(fun (nbr_lst, nxt_lst) ->
+      List.for_all nbr_lst ~f:(fun nbr ->
+        Game.Position.in_bounds ~game_kind:game.game_kind nbr)
+      && List.for_all nxt_lst ~f:(fun nbr ->
+        Game.Position.in_bounds ~game_kind:game.game_kind nbr))
+  ;;
+
   (* TODO: return is_game_over directly *)
+  let positions_not_blocking_threes (game : Game.t) ~(me : Game.Piece.t) =
+    (* let all_positions = List.init *)
+    let positions_on_board = Map.keys game.board in
+    let me_positions =
+      List.filter positions_on_board ~f:(fun pos ->
+        let piece = Map.find_exn game.board pos in
+        Game.Piece.equal piece me)
+    in
+    let immediate_nbrs =
+      List.map me_positions ~f:(fun pos ->
+        get_immediate_neighbors_and_nexts game pos)
+    in
+    let res = List.dedup_and_sort (List.concat
+      (List.filter_map immediate_nbrs ~f:(fun lsts ->
+        let thrs = List.filter lsts ~f:(fun (nbr_lst, _) ->
+          List.for_all nbr_lst ~f:(fun nbr ->
+            let piece_opn = Map.find game.board nbr in
+            match piece_opn with
+            | None -> false
+            | Some piece -> Game.Piece.equal piece me)) in
+        match thrs with
+        | [] -> None
+        | nxts -> Some (List.concat (List.map nxts ~f:snd))))) ~compare:Game.Position.compare
+    in
+    print_endline "THREES";
+    print_s
+      [%sexp
+        (res
+         : Game.Position.t list )];
+    res
+  ;;
 
   (* Exercise 3 *)
   let winning_moves ~(me : Game.Piece.t) (game : Game.t)
@@ -270,14 +329,20 @@ module Exercises = struct
     =
     let open Game in
     let unplaced_positions = available_moves game in
-    List.filter_map unplaced_positions ~f:(fun position ->
-      let game_after_move = place_piece game ~piece:me ~position in
-      match evaluate game_after_move with
-      | Game_over { winner = Some piece } ->
-        (match Piece.equal piece me with
-         | true -> Some position
-         | false -> None)
-      | _ -> None)
+    let base_positions =
+      List.filter_map unplaced_positions ~f:(fun position ->
+        let game_after_move = place_piece game ~piece:me ~position in
+        match evaluate game_after_move with
+        | Game_over { winner = Some piece } ->
+          (match Piece.equal piece me with
+           | true -> Some position
+           | false -> None)
+        | _ -> None)
+    in
+    match game.game_kind with
+    | Game_kind.Tic_tac_toe -> base_positions
+    | Game_kind.Omok ->
+      List.append base_positions (positions_not_blocking_threes game ~me)
   ;;
 
   (* Exercise 4 *)
@@ -296,15 +361,76 @@ module Exercises = struct
   ;;
 
   (* Exercise 5 *)
-  let _available_moves_that_do_not_immediately_lose
+  let available_moves_that_do_not_immediately_lose
     ~(me : Game.Piece.t)
     (game : Game.t)
     : Game.Position.t list
     =
+    let open Game in
+    match game.game_kind with
+    | Game_kind.Omok ->
+    let len = Game_kind.board_length game.game_kind in
+    let row = List.init len ~f:Fn.id in
+    let all_positions =
+      List.cartesian_product row row
+      |> List.map ~f:(fun (row, column) -> { Position.row; column })
+    in
     let possible_moves = available_moves game in
-    List.filter possible_moves ~f:(fun position ->
-      let game_after_move = place_piece game ~piece:me ~position in
-      List.is_empty (losing_moves ~me game_after_move))
+    let losing_moves = losing_moves ~me game in
+    let possible_moves_that_do_not_lose =
+      List.filter possible_moves ~f:(fun p ->
+        not (List.mem losing_moves p ~equal:Game.Position.equal))
+    in
+    let unavailable_moves =
+      List.filter all_positions ~f:(fun p ->
+        not (List.mem possible_moves p ~equal:Position.equal))
+    in
+    (* List.filter possible_moves ~f:(fun position -> let game_after_move =
+       place_piece game ~piece:me ~position in List.is_empty (losing_moves
+       ~me game_after_move)) *)
+    let radius_2_nbrs =
+      List.concat_map unavailable_moves ~f:(fun pos ->
+        let nbrs_lst = get_immediate_neighbors_and_nexts game pos in
+        List.concat_map nbrs_lst ~f:(fun (nbrlst, nxtlst) ->
+          List.append nbrlst nxtlst))
+    in
+    List.filter radius_2_nbrs ~f:(fun pos ->
+      List.mem possible_moves_that_do_not_lose pos ~equal:Position.equal)
+    | Game_kind.Tic_tac_toe ->
+      let possible_moves = available_moves game in
+    let losing_moves = losing_moves ~me game in
+      List.filter possible_moves ~f:(fun p ->
+        not (List.mem losing_moves p ~equal:Game.Position.equal))
+  ;;
+
+  let weigh_consecutive_moves
+    ~(group : Game.Position.t list)
+    ~(pos : Game.Position.t)
+    (game : Game.t)
+    : int
+    =
+    let full_group = List.append [ pos ] group in
+    let target_piece = Map.find_exn game.board pos in
+    List.foldi full_group ~init:0 ~f:(fun _ idx _ ->
+      let curr_lst = List.drop full_group idx in
+      let curr =
+        fst
+          (List.fold
+             curr_lst
+             ~init:(0, Some target_piece)
+             ~f:(fun (scr, last_piece) nbr ->
+               let piece_opn = Map.find game.board nbr in
+               match piece_opn with
+               | None -> scr, None
+               | Some piece ->
+                 (match last_piece with
+                  | Some lst ->
+                    (match Game.Piece.equal piece lst with
+                     | true -> scr + 1, Some piece
+                     | false -> scr, None)
+                  | None -> scr, None)))
+      in
+      curr)
   ;;
 
   let count_unobstructed_pieces_of_pos
@@ -316,6 +442,7 @@ module Exercises = struct
     let target_piece = Map.find_exn game.board pos in
     let count_of_unobstructed_pieces =
       List.fold neighbors ~init:0 ~f:(fun acc group ->
+        (* print_s [%sexp (group : Game.Position.t list)]; *)
         let count_of_target_pieces =
           List.count group ~f:(fun piece_position ->
             let piece = Map.find game.board piece_position in
@@ -330,7 +457,8 @@ module Exercises = struct
             | None -> false
             | Some p -> Piece.equal p (Piece.flip target_piece))
         in
-        acc + (count_of_target_pieces - count_of_enemy_pieces))
+        let extra_pts = weigh_consecutive_moves ~group ~pos game in
+        acc + (count_of_target_pieces - count_of_enemy_pieces) + extra_pts)
     in
     count_of_unobstructed_pieces
   ;;
@@ -374,10 +502,11 @@ module Exercises = struct
          in
          let count_of_all_pieces_unobstructed =
            List.fold positions_of_player_piece ~init:0 ~f:(fun acc pos ->
-            (* ptsrint_s [%sexp ] *)
              acc + count_unobstructed_pieces_of_pos pos game)
          in
-         count_of_all_pieces_unobstructed * count_of_all_pieces_unobstructed)
+         count_of_all_pieces_unobstructed
+         * count_of_all_pieces_unobstructed
+         * count_of_all_pieces_unobstructed)
     | false ->
       (match game_eval with
        | Illegal_move -> 0
@@ -392,18 +521,19 @@ module Exercises = struct
          let positions_on_board = Map.keys game.board in
          let positions_of_enemy_piece =
            List.filter positions_on_board ~f:(fun pos ->
-             Piece.equal (Map.find_exn game.board pos) (Piece.flip player_piece))
+             Piece.equal
+               (Map.find_exn game.board pos)
+               (Piece.flip player_piece))
          in
          let count_of_all_enemy_pieces_unobstructed =
            List.fold positions_of_enemy_piece ~init:0 ~f:(fun acc pos ->
-             print_s [%sexp (pos, count_unobstructed_pieces_of_pos pos game : Game.Position.t * int)];
              acc + count_unobstructed_pieces_of_pos pos game)
          in
-         (* print_s [%sexp (-1
-         * (count_of_all_enemy_pieces_unobstructed
-            * count_of_all_enemy_pieces_unobstructed) : int)]; *)
+         (* print_s [%sexp (-1 * (count_of_all_enemy_pieces_unobstructed *
+            count_of_all_enemy_pieces_unobstructed) : int)]; *)
          -1
          * (count_of_all_enemy_pieces_unobstructed
+            * count_of_all_enemy_pieces_unobstructed
             * count_of_all_enemy_pieces_unobstructed))
   ;;
 
@@ -453,11 +583,8 @@ module Exercises = struct
     ~(alpha : int)
     ~(beta : int)
     =
-    let losing_moves = losing_moves ~me:player_piece game in
-    let unplaced_moves = available_moves game in
     let unplaced_moves =
-      List.filter unplaced_moves ~f:(fun p ->
-        not (List.mem losing_moves p ~equal:Game.Position.equal))
+      available_moves_that_do_not_immediately_lose ~me:player_piece game
     in
     let game_eval = evaluate game in
     (* print_endline "~~~~~~~~~~~~~~~~~~~~~~~~~"; *)
@@ -523,7 +650,7 @@ module Exercises = struct
                   in
                   List.append acc [ position, scr ])
             in
-            print_scores positions_with_score;
+            (* _print_scores positions_with_score; *)
             Option.value_map
               (List.max_elt
                  positions_with_score
@@ -678,18 +805,61 @@ module Exercises = struct
          return ())
   ;;
 
-  let test_score =
+  let test_consecutive_score =
     Command.async
       ~summary:"Test Score"
       (let%map_open.Command () = return ()
        and _piece = piece_flag in
        fun () ->
          print_game omok_game;
-         let eval = evaluate omok_game in
-         let res = score eval ~is_maxi_player:true ~player_piece:(Game.Piece.of_string "O") ~game:omok_game in
+         let res =
+           weigh_consecutive_moves
+             ~group:
+               (List.nth_exn
+                  (get_neighbors
+                     { Game.Position.row = 8; column = 7 }
+                     omok_game)
+                  0)
+             ~pos:{ Game.Position.row = 8; column = 7 }
+             omok_game
+         in
          print_endline "FINAL";
          print_s [%sexp (res : int)];
          return ())
+  ;;
+
+  let test_score =
+    Command.async
+      ~summary:"Test Consecutive Score"
+      (let%map_open.Command () = return ()
+       and _piece = piece_flag in
+       fun () ->
+         print_game omok_game;
+         let eval = evaluate omok_game in
+         let res =
+           score
+             eval
+             ~is_maxi_player:true
+             ~player_piece:(Game.Piece.of_string "O")
+             ~game:omok_game
+         in
+         print_endline "FINAL";
+         print_s [%sexp (res : int)];
+         return ())
+  ;;
+
+  let test_three =
+    Command.async
+      ~summary:"Test Three"
+      (let%map_open.Command () = return ()
+       and piece = piece_flag in
+       fun () ->
+         print_game omok_game;
+         let res = positions_not_blocking_threes omok_game ~me:piece in
+         print_endline "FINAL";
+         print_s [%sexp (res : Game.Position.t list)];
+         return ())
+  ;;
 
   let command =
     Command.group
@@ -701,6 +871,8 @@ module Exercises = struct
       ; "minmax", minmax_t
       ; "omok", test_omok
       ; "scr", test_score
+      ; "consecutive-scr", test_consecutive_score
+      ; "c", test_three
       ]
   ;;
 end
