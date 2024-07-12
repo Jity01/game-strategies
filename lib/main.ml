@@ -315,11 +315,6 @@ module Exercises = struct
         | [] -> None
         | nxts -> Some (List.concat (List.map nxts ~f:snd))))) ~compare:Game.Position.compare
     in
-    print_endline "THREES";
-    print_s
-      [%sexp
-        (res
-         : Game.Position.t list )];
     res
   ;;
 
