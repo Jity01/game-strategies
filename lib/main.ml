@@ -700,7 +700,7 @@ module Exercises = struct
           ~player_piece:me
           ~is_maxi_player:true
           ~game
-          ~depth:1
+          ~depth:2
           ~beta:Int.max_value
           ~alpha:Int.min_value
       | Game_kind.Tic_tac_toe ->
@@ -874,21 +874,21 @@ end
 
 module Server = struct
   let handle_take_turn (_client : unit) (query : Rpcs.Take_turn.Query.t) =
-    print_s
-      [%message "Received take turn query" (query : Rpcs.Take_turn.Query.t)];
+    (* print_s
+      [%message "Received take turn query" (query : Rpcs.Take_turn.Query.t)]; *)
     let response =
       { Rpcs.Take_turn.Response.piece = query.you_play
       ; Rpcs.Take_turn.Response.position =
           Exercises.minmax ~me:query.you_play query.game
       }
     in
-    print_s [%message "Response" (response : Rpcs.Take_turn.Response.t)];
+    (* print_s [%message "Response" (response : Rpcs.Take_turn.Response.t)]; *)
     return response
   ;;
 
-  let handle_game_over (_client : unit) (query : Rpcs.Game_over.Query.t) =
-    print_s
-      [%message "Received game over query" (query : Rpcs.Game_over.Query.t)];
+  let handle_game_over (_client : unit) (_query : Rpcs.Game_over.Query.t) =
+    (* print_s *)
+      (* [%message "Received game over query" (query : Rpcs.Game_over.Query.t)]; *)
     let response = () in
     return response
   ;;
